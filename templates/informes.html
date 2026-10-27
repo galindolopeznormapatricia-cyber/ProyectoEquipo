@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Informes | DevProject Manager{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <p class="eyebrow mb-2">Visión general</p>
+    <h1 class="h2 mb-1">Informes y métricas</h1>
+    <p class="text-secondary mb-0">Avance de tareas y horas reportadas en tus proyectos.</p>
+</div>
+<div class="card shadow-sm">
+    <div class="table-responsive">
+        <table class="table align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Proyecto</th><th>Estado</th><th>Avance</th><th>Tareas</th><th>Horas reportadas</th><th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for resumen in resumenes %}
+                <tr>
+                    <td class="fw-semibold">{{ resumen.proyecto.nombre }}</td>
+                    <td>{{ resumen.proyecto.estado|replace('_', ' ')|title }}</td>
+                    <td style="min-width: 150px">
+                        <div class="d-flex justify-content-between small mb-1"><span>{{ resumen.avance }}%</span><span>{{ resumen.completadas }}/{{ resumen.total_tareas }}</span></div>
+                        <div class="progress"><div class="progress-bar" style="width: {{ resumen.avance }}%"></div></div>
+                    </td>
+                    <td>{{ resumen.total_tareas }}</td>
+                    <td>{{ resumen.horas }} h</td>
+                    <td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('proyecto_detalle', project_id=resumen.proyecto.id) }}">Detalle</a></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" class="text-center text-secondary py-5">Aún no hay proyectos asignados para mostrar.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+

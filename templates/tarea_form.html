@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Editar' if tarea else 'Nueva' }} tarea | DevProject Manager{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <p class="eyebrow mb-2">{{ proyecto.nombre }}</p>
+        <h1 class="h2 mb-4">{{ 'Editar tarea' if tarea else 'Nueva tarea' }}</h1>
+        <form method="POST" class="card p-4 p-md-5">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="mb-3">
+                <label class="form-label" for="titulo">Título</label>
+                <input class="form-control" id="titulo" name="titulo" maxlength="140" required
+                       value="{{ tarea.titulo if tarea else '' }}">
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="descripcion">Descripción</label>
+                <textarea class="form-control" id="descripcion" name="descripcion" rows="4" maxlength="4000">{{ tarea.descripcion if tarea else '' }}</textarea>
+            </div>
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label" for="estado">Estado</label>
+                    <select class="form-select" id="estado" name="estado">
+                        {% for clave, etiqueta in estados.items() %}
+                        <option value="{{ clave }}" {% if tarea and tarea.estado == clave %}selected{% elif not tarea and clave == 'pendiente' %}selected{% endif %}>{{ etiqueta }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="prioridad">Prioridad</label>
+                    <select class="form-select" id="prioridad" name="prioridad">
+                        {% for clave, etiqueta in [('baja', 'Baja'), ('normal', 'Normal'), ('alta', 'Alta')] %}
+                        <option value="{{ clave }}" {% if tarea and tarea.prioridad == clave %}selected{% elif not tarea and clave == 'normal' %}selected{% endif %}>{{ etiqueta }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="fecha_limite">Fecha límite</label>
+                    <input class="form-control" id="fecha_limite" name="fecha_limite" type="date"
+                           value="{{ tarea.fecha_limite.isoformat() if tarea and tarea.fecha_limite else '' }}">
+                </div>
+                <div class="col-12">
+                    <label class="form-label" for="asignado_a_id">Asignar a</label>
+                    <select class="form-select" id="asignado_a_id" name="asignado_a_id">
+                        <option value="">Sin asignar</option>
+                        {% for persona in desarrolladores %}
+                        <option value="{{ persona.id }}" {% if tarea and tarea.asignado_a_id == persona.id %}selected{% endif %}>{{ persona.nombre }} · {{ persona.email }}</option>
+                        {% endfor %}
+                    </select>
+                    <div class="form-text">Solo puedes asignar tareas a desarrolladores activos del proyecto.</div>
+                </div>
+            </div>
+            <div class="d-flex gap-2 mt-4">
+                <button class="btn btn-primary">Guardar tarea</button>
+                <a class="btn btn-outline-secondary" href="{{ url_for('proyecto_detalle', project_id=proyecto.id) }}">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+

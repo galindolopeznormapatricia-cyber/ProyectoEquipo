@@ -1,7 +1,8 @@
 
 import os
 import re
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from decimal import Decimal, InvalidOperation
 from functools import wraps
 
 import click
@@ -50,9 +51,22 @@ login_manager.login_message = "Inicia sesión para continuar."
 login_manager.login_message_category = "warning"
 
 ROLES = {
-    "admin": "Administrador",
-    "desarrollador": "Desarrollador",
-    "cliente": "Cliente",
+    "admin": "Project Manager / Administrador",
+    "desarrollador": "Desarrollador / Miembro de equipo",
+    "cliente": "Cliente / Stakeholder",
+}
+
+ESTADOS_PROYECTO = {
+    "planificacion": "Planificación",
+    "activo": "Activo",
+    "pausado": "Pausado",
+    "completado": "Completado",
+}
+
+ESTADOS_TAREA = {
+    "pendiente": "Pendiente",
+    "en_progreso": "En progreso",
+    "completada": "Completada",
 }
 
 
@@ -72,6 +86,84 @@ class Usuario(UserMixin, db.Model):
 
     def verificar_password(self, password):
         return check_password_hash(self.password_hash, password)
+
+
+class Proyecto(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(120), nullable=False)
+    descripcion = db.Column(db.Text, nullable=False, default="")
+    presupuesto = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+    estado = db.Column(db.String(20), nullable=False, default="planificacion")
+    fecha_inicio = db.Column(db.Date, nullable=True)
+    fecha_fin = db.Column(db.Date, nullable=True)
+    creado_por_id = db.Column(db.Integer, db.ForeignKey("usuario.id"), nullable=False)
+    creado_en = db.Column(
+        db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+    creador = db.relationship("Usuario", backref="proyectos_creados")
+    miembros = db.relationship(
+        "MiembroProyecto",
+        back_populates="proyecto",
+        cascade="all, delete-orphan",
+    )
+    tareas = db.relationship(
+        "Tarea",
+        back_populates="proyecto",
+        cascade="all, delete-orphan",
+        order_by="Tarea.id.desc()",
+    )
+
+
+class MiembroProyecto(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    proyecto_id = db.Column(
+        db.Integer, db.ForeignKey("proyecto.id"), nullable=False
+    )
+    usuario_id = db.Column(db.Integer, db.ForeignKey("usuario.id"), nullable=False)
+    proyecto = db.relationship("Proyecto", back_populates="miembros")
+    usuario = db.relationship("Usuario", backref="asignaciones_proyecto")
+    __table_args__ = (
+        db.UniqueConstraint("proyecto_id", "usuario_id", name="uq_proyecto_miembro"),
+    )
+
+
+class Tarea(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    proyecto_id = db.Column(
+        db.Integer, db.ForeignKey("proyecto.id"), nullable=False
+    )
+    asignado_a_id = db.Column(db.Integer, db.ForeignKey("usuario.id"), nullable=True)
+    titulo = db.Column(db.String(140), nullable=False)
+    descripcion = db.Column(db.Text, nullable=False, default="")
+    estado = db.Column(db.String(20), nullable=False, default="pendiente")
+    prioridad = db.Column(db.String(20), nullable=False, default="normal")
+    fecha_limite = db.Column(db.Date, nullable=True)
+    creado_en = db.Column(
+        db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+    proyecto = db.relationship("Proyecto", back_populates="tareas")
+    asignado_a = db.relationship("Usuario", backref="tareas_asignadas")
+    registros_horas = db.relationship(
+        "RegistroHoras",
+        back_populates="tarea",
+        cascade="all, delete-orphan",
+        order_by="RegistroHoras.fecha.desc()",
+    )
+
+
+class RegistroHoras(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    tarea_id = db.Column(db.Integer, db.ForeignKey("tarea.id"), nullable=False)
+    usuario_id = db.Column(db.Integer, db.ForeignKey("usuario.id"), nullable=False)
+    horas = db.Column(db.Numeric(5, 2), nullable=False)
+    nota = db.Column(db.String(500), nullable=False, default="")
+    fecha = db.Column(db.Date, nullable=False, default=date.today)
+    tarea = db.relationship("Tarea", back_populates="registros_horas")
+    usuario = db.relationship("Usuario", backref="registros_horas")
+
+
+with app.app_context():
+    db.create_all()
 
 
 @login_manager.user_loader
@@ -124,6 +216,47 @@ def serializer_recuperacion():
     return URLSafeTimedSerializer(
         app.config["SECRET_KEY"], salt="recuperacion-password"
     )
+
+
+def parsear_fecha(valor, etiqueta):
+    if not valor:
+        return None, None
+    try:
+        return date.fromisoformat(valor), None
+    except ValueError:
+        return None, f"Indica una fecha válida para {etiqueta}."
+
+
+def proyectos_visibles():
+    consulta = Proyecto.query
+    if current_user.rol != "admin":
+        consulta = consulta.join(MiembroProyecto).filter(
+            MiembroProyecto.usuario_id == current_user.id
+        )
+    return consulta.order_by(Proyecto.creado_en.desc()).all()
+
+
+def obtener_proyecto_visible(project_id):
+    proyecto = db.get_or_404(Proyecto, project_id)
+    if current_user.rol != "admin" and not any(
+        miembro.usuario_id == current_user.id for miembro in proyecto.miembros
+    ):
+        abort(403)
+    return proyecto
+
+
+def es_miembro_desarrollador(proyecto, usuario=None):
+    usuario = usuario or current_user
+    return any(
+        miembro.usuario_id == usuario.id
+        and miembro.usuario.rol == "desarrollador"
+        and miembro.usuario.activo
+        for miembro in proyecto.miembros
+    )
+
+
+def horas_de_tarea(tarea):
+    return sum((registro.horas for registro in tarea.registros_horas), start=0)
 
 
 @app.route("/")
@@ -213,17 +346,384 @@ def logout():
 @app.route("/dashboard")
 @login_required
 def dashboard():
-    total_usuarios = Usuario.query.count() if current_user.rol == "admin" else None
-    usuarios_activos = (
-        Usuario.query.filter_by(activo=True).count()
-        if current_user.rol == "admin" else None
+    proyectos = proyectos_visibles()
+    tareas_pendientes = sum(
+        1 for proyecto in proyectos
+        for tarea in proyecto.tareas
+        if tarea.estado != "completada"
     )
+    total_usuarios = Usuario.query.count() if current_user.rol == "admin" else None
+    usuarios_activos = Usuario.query.filter_by(activo=True).count() if current_user.rol == "admin" else None
     return render_template(
         "dashboard.html",
+        proyectos=proyectos[:4],
+        total_proyectos=len(proyectos),
+        tareas_pendientes=tareas_pendientes,
         total_usuarios=total_usuarios,
         usuarios_activos=usuarios_activos,
         roles=ROLES,
+        estados_proyecto=ESTADOS_PROYECTO,
     )
+
+
+@app.route("/proyectos")
+@login_required
+def proyectos():
+    return render_template(
+        "proyectos.html",
+        proyectos=proyectos_visibles(),
+        estados=ESTADOS_PROYECTO,
+    )
+
+
+@app.route("/proyectos/nuevo", methods=["GET", "POST"])
+@roles_requeridos("admin")
+def proyecto_nuevo():
+    if request.method == "POST":
+        nombre = request.form.get("nombre", "").strip()
+        descripcion = request.form.get("descripcion", "").strip()
+        estado = request.form.get("estado", "")
+        miembros_ids = set(request.form.getlist("miembros", type=int))
+
+        try:
+            presupuesto = Decimal(request.form.get("presupuesto", "0"))
+            if (
+                not presupuesto.is_finite()
+                or presupuesto < 0
+                or presupuesto > Decimal("9999999999.99")
+            ):
+                raise InvalidOperation
+        except InvalidOperation:
+            presupuesto = Decimal("0")
+            error = "El presupuesto debe ser un número válido entre 0 y 9,999,999,999.99."
+        else:
+            error = None
+
+        fecha_inicio, fecha_error = parsear_fecha(
+            request.form.get("fecha_inicio", ""), "de inicio"
+        )
+        fecha_fin, fin_error = parsear_fecha(
+            request.form.get("fecha_fin", ""), "de término"
+        )
+        usuarios = Usuario.query.filter(
+            Usuario.id.in_(miembros_ids),
+            Usuario.activo.is_(True),
+            Usuario.rol.in_(("desarrollador", "cliente")),
+        ).all() if miembros_ids else []
+
+        if not error and (not nombre or len(nombre) > 120):
+            error = "El nombre del proyecto es obligatorio y debe tener hasta 120 caracteres."
+        elif not error and len(descripcion) > 4000:
+            error = "La descripción debe tener hasta 4,000 caracteres."
+        elif not error and estado not in ESTADOS_PROYECTO:
+            error = "Selecciona un estado válido."
+        elif not error and len(usuarios) != len(miembros_ids):
+            error = "Solo puedes asignar miembros activos con rol de desarrollador o cliente."
+        elif not error and (fecha_error or fin_error):
+            error = fecha_error or fin_error
+        elif not error and fecha_inicio and fecha_fin and fecha_fin < fecha_inicio:
+            error = "La fecha de término no puede ser anterior a la fecha de inicio."
+
+        if error:
+            flash(error, "danger")
+        else:
+            proyecto = Proyecto(
+                nombre=nombre,
+                descripcion=descripcion,
+                presupuesto=presupuesto,
+                estado=estado,
+                fecha_inicio=fecha_inicio,
+                fecha_fin=fecha_fin,
+                creador=current_user,
+                miembros=[MiembroProyecto(usuario=usuario) for usuario in usuarios],
+            )
+            db.session.add(proyecto)
+            db.session.commit()
+            flash("Proyecto creado y equipo asignado.", "success")
+            return redirect(url_for("proyectos"))
+
+    return render_template(
+        "proyecto_form.html",
+        proyecto=None,
+        estados=ESTADOS_PROYECTO,
+        candidatos=Usuario.query.filter(
+            Usuario.activo.is_(True),
+            Usuario.rol.in_(("desarrollador", "cliente")),
+        ).order_by(Usuario.nombre).all(),
+        seleccionados=set(),
+    )
+
+
+@app.route("/proyectos/<int:project_id>/editar", methods=["GET", "POST"])
+@roles_requeridos("admin")
+def proyecto_editar(project_id):
+    proyecto = db.get_or_404(Proyecto, project_id)
+    if request.method == "POST":
+        nombre = request.form.get("nombre", "").strip()
+        descripcion = request.form.get("descripcion", "").strip()
+        estado = request.form.get("estado", "")
+        miembros_ids = set(request.form.getlist("miembros", type=int))
+
+        try:
+            presupuesto = Decimal(request.form.get("presupuesto", "0"))
+            if (
+                not presupuesto.is_finite()
+                or presupuesto < 0
+                or presupuesto > Decimal("9999999999.99")
+            ):
+                raise InvalidOperation
+        except InvalidOperation:
+            presupuesto = proyecto.presupuesto
+            error = "El presupuesto debe ser un número válido entre 0 y 9,999,999,999.99."
+        else:
+            error = None
+
+        fecha_inicio, fecha_error = parsear_fecha(
+            request.form.get("fecha_inicio", ""), "de inicio"
+        )
+        fecha_fin, fin_error = parsear_fecha(
+            request.form.get("fecha_fin", ""), "de término"
+        )
+        usuarios = Usuario.query.filter(
+            Usuario.id.in_(miembros_ids),
+            Usuario.activo.is_(True),
+            Usuario.rol.in_(("desarrollador", "cliente")),
+        ).all() if miembros_ids else []
+
+        if not error and (not nombre or len(nombre) > 120):
+            error = "El nombre del proyecto es obligatorio y debe tener hasta 120 caracteres."
+        elif not error and len(descripcion) > 4000:
+            error = "La descripción debe tener hasta 4,000 caracteres."
+        elif not error and estado not in ESTADOS_PROYECTO:
+            error = "Selecciona un estado válido."
+        elif not error and len(usuarios) != len(miembros_ids):
+            error = "Solo puedes asignar miembros activos con rol de desarrollador o cliente."
+        elif not error and (fecha_error or fin_error):
+            error = fecha_error or fin_error
+        elif not error and fecha_inicio and fecha_fin and fecha_fin < fecha_inicio:
+            error = "La fecha de término no puede ser anterior a la fecha de inicio."
+
+        if error:
+            flash(error, "danger")
+        else:
+            proyecto.nombre = nombre
+            proyecto.descripcion = descripcion
+            proyecto.presupuesto = presupuesto
+            proyecto.estado = estado
+            proyecto.fecha_inicio = fecha_inicio
+            proyecto.fecha_fin = fecha_fin
+            nuevos_miembros = {usuario.id: usuario for usuario in usuarios}
+            miembro_actual_ids = {
+                miembro.usuario_id for miembro in proyecto.miembros
+            }
+            for miembro in list(proyecto.miembros):
+                if miembro.usuario_id not in nuevos_miembros:
+                    proyecto.miembros.remove(miembro)
+            for usuario in usuarios:
+                if usuario.id not in miembro_actual_ids:
+                    proyecto.miembros.append(MiembroProyecto(usuario=usuario))
+            desarrollador_ids = {
+                usuario.id for usuario in usuarios
+                if usuario.rol == "desarrollador"
+            }
+            for tarea in proyecto.tareas:
+                if (
+                    tarea.asignado_a_id
+                    and tarea.asignado_a_id not in desarrollador_ids
+                ):
+                    tarea.asignado_a = None
+            db.session.commit()
+            flash("Proyecto actualizado correctamente.", "success")
+            return redirect(url_for("proyecto_detalle", project_id=proyecto.id))
+
+    return render_template(
+        "proyecto_form.html",
+        proyecto=proyecto,
+        estados=ESTADOS_PROYECTO,
+        candidatos=Usuario.query.filter(
+            Usuario.activo.is_(True),
+            Usuario.rol.in_(("desarrollador", "cliente")),
+        ).order_by(Usuario.nombre).all(),
+        seleccionados={miembro.usuario_id for miembro in proyecto.miembros},
+    )
+
+
+@app.route("/proyectos/<int:project_id>/eliminar", methods=["POST"])
+@roles_requeridos("admin")
+def proyecto_eliminar(project_id):
+    proyecto = db.get_or_404(Proyecto, project_id)
+    db.session.delete(proyecto)
+    db.session.commit()
+    flash("Proyecto eliminado.", "info")
+    return redirect(url_for("proyectos"))
+
+
+@app.route("/proyectos/<int:project_id>")
+@login_required
+def proyecto_detalle(project_id):
+    proyecto = obtener_proyecto_visible(project_id)
+    puede_trabajar = current_user.rol == "admin" or (
+        current_user.rol == "desarrollador"
+        and es_miembro_desarrollador(proyecto)
+    )
+    return render_template(
+        "proyecto_detalle.html",
+        proyecto=proyecto,
+        estados_tarea=ESTADOS_TAREA,
+        puede_trabajar=puede_trabajar,
+        es_admin=current_user.rol == "admin",
+        horas_de_tarea=horas_de_tarea,
+    )
+
+
+@app.route("/proyectos/<int:project_id>/tareas/nueva", methods=["GET", "POST"])
+@roles_requeridos("admin", "desarrollador")
+def tarea_nueva(project_id):
+    proyecto = obtener_proyecto_visible(project_id)
+    if current_user.rol == "desarrollador" and not es_miembro_desarrollador(proyecto):
+        abort(403)
+
+    return guardar_tarea(proyecto)
+
+
+@app.route("/tareas/<int:task_id>/editar", methods=["GET", "POST"])
+@roles_requeridos("admin", "desarrollador")
+def tarea_editar(task_id):
+    tarea = db.get_or_404(Tarea, task_id)
+    proyecto = obtener_proyecto_visible(tarea.proyecto_id)
+    if current_user.rol == "desarrollador" and not es_miembro_desarrollador(proyecto):
+        abort(403)
+    return guardar_tarea(proyecto, tarea)
+
+
+def guardar_tarea(proyecto, tarea=None):
+    desarrolladores = [
+        miembro.usuario
+        for miembro in proyecto.miembros
+        if miembro.usuario.rol == "desarrollador" and miembro.usuario.activo
+    ]
+    if request.method == "POST":
+        titulo = request.form.get("titulo", "").strip()
+        descripcion = request.form.get("descripcion", "").strip()
+        estado = request.form.get("estado", "pendiente")
+        prioridad = request.form.get("prioridad", "normal")
+        asignado_raw = request.form.get("asignado_a_id", "")
+        fecha_limite, fecha_error = parsear_fecha(
+            request.form.get("fecha_limite", ""), "de entrega"
+        )
+        asignado = next(
+            (usuario for usuario in desarrolladores
+             if str(usuario.id) == asignado_raw),
+            None,
+        ) if asignado_raw else None
+        error = None
+
+        if not titulo or len(titulo) > 140:
+            error = "El título es obligatorio y debe tener hasta 140 caracteres."
+        elif estado not in ESTADOS_TAREA:
+            error = "Selecciona un estado válido."
+        elif prioridad not in ("baja", "normal", "alta"):
+            error = "Selecciona una prioridad válida."
+        elif asignado_raw and not asignado:
+            error = "La persona asignada debe ser un desarrollador activo del proyecto."
+        elif len(descripcion) > 4000:
+            error = "La descripción debe tener hasta 4,000 caracteres."
+        elif fecha_error:
+            error = fecha_error
+
+        if error:
+            flash(error, "danger")
+        else:
+            if tarea is None:
+                tarea = Tarea(proyecto=proyecto)
+                db.session.add(tarea)
+            tarea.titulo = titulo
+            tarea.descripcion = descripcion
+            tarea.estado = estado
+            tarea.prioridad = prioridad
+            tarea.fecha_limite = fecha_limite
+            tarea.asignado_a = asignado
+            db.session.commit()
+            flash("Tarea guardada correctamente.", "success")
+            return redirect(url_for("proyecto_detalle", project_id=proyecto.id))
+
+    return render_template(
+        "tarea_form.html",
+        proyecto=proyecto,
+        tarea=tarea,
+        estados=ESTADOS_TAREA,
+        desarrolladores=desarrolladores,
+    )
+
+
+@app.route("/tareas/<int:task_id>/horas", methods=["POST"])
+@roles_requeridos("desarrollador")
+def registrar_horas(task_id):
+    tarea = db.get_or_404(Tarea, task_id)
+    proyecto = obtener_proyecto_visible(tarea.proyecto_id)
+    if not es_miembro_desarrollador(proyecto):
+        abort(403)
+    if tarea.estado == "completada":
+        flash("No se pueden registrar horas en una tarea completada.", "danger")
+        return redirect(url_for("proyecto_detalle", project_id=proyecto.id))
+    if tarea.asignado_a_id not in (None, current_user.id):
+        flash("Solo puedes reportar horas en tareas sin asignar o asignadas a ti.", "danger")
+        return redirect(url_for("proyecto_detalle", project_id=proyecto.id))
+
+    try:
+        horas = Decimal(request.form.get("horas", ""))
+        if not horas.is_finite() or horas <= 0 or horas > 24:
+            raise InvalidOperation
+    except InvalidOperation:
+        flash("Las horas deben ser un número mayor a 0 y no mayor a 24.", "danger")
+        return redirect(url_for("proyecto_detalle", project_id=proyecto.id))
+
+    fecha, error = parsear_fecha(request.form.get("fecha", ""), "del reporte")
+    nota = request.form.get("nota", "").strip()
+    if error or len(nota) > 500:
+        flash(error or "La descripción debe tener hasta 500 caracteres.", "danger")
+    else:
+        db.session.add(
+            RegistroHoras(
+                tarea=tarea,
+                usuario=current_user,
+                horas=horas,
+                fecha=fecha or date.today(),
+                nota=nota,
+            )
+        )
+        db.session.commit()
+        flash("Horas registradas correctamente.", "success")
+    return redirect(url_for("proyecto_detalle", project_id=proyecto.id))
+
+
+@app.route("/informes")
+@login_required
+def informes():
+    resumenes = []
+    for proyecto in proyectos_visibles():
+        total_tareas = len(proyecto.tareas)
+        completadas = sum(
+            tarea.estado == "completada" for tarea in proyecto.tareas
+        )
+        horas = sum(
+            (
+                registro.horas
+                for tarea in proyecto.tareas
+                for registro in tarea.registros_horas
+            ),
+            start=Decimal("0"),
+        )
+        resumenes.append(
+            {
+                "proyecto": proyecto,
+                "total_tareas": total_tareas,
+                "completadas": completadas,
+                "avance": round(completadas * 100 / total_tareas) if total_tareas else 0,
+                "horas": horas,
+            }
+        )
+    return render_template("informes.html", resumenes=resumenes)
 
 
 @app.route("/usuarios")
@@ -319,6 +819,10 @@ def usuario_editar(user_id):
             usuario.rol = rol
             usuario.activo = activo
 
+            if rol != "desarrollador" or not activo:
+                for tarea in usuario.tareas_asignadas:
+                    tarea.asignado_a = None
+
             if password:
                 usuario.establecer_password(password)
 
@@ -342,6 +846,9 @@ def usuario_estado(user_id):
         flash("No puedes desactivar tu propia cuenta.", "danger")
     else:
         usuario.activo = not usuario.activo
+        if not usuario.activo:
+            for tarea in usuario.tareas_asignadas:
+                tarea.asignado_a = None
         db.session.commit()
         flash("Estado del usuario actualizado.", "success")
 

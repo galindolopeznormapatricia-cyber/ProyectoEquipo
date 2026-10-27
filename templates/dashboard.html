@@ -1,65 +1,97 @@
-
 {% extends "base.html" %}
-{% block title %}Dashboard | DevProject Manager{% endblock %}
+{% block title %}Panel | DevProject Manager{% endblock %}
 
 {% block content %}
-<div class="mb-4">
-    <h1 class="h2">Panel principal</h1>
-    <p class="text-secondary">
-        Bienvenido, {{ current_user.nombre }}.
-        Este es tu espacio de trabajo.
-    </p>
-</div>
+<section class="d-flex justify-content-between align-items-end flex-wrap gap-3 mb-4">
+    <div>
+        <p class="eyebrow mb-2">Tu espacio de trabajo</p>
+        <h1 class="h2 mb-1">Hola, {{ current_user.nombre.split()[0] }} 👋</h1>
+        <p class="text-secondary mb-0">{{ roles[current_user.rol] }} · Aquí tienes el resumen de hoy.</p>
+    </div>
+    {% if current_user.rol == 'admin' %}
+    <a class="btn btn-primary" href="{{ url_for('proyecto_nuevo') }}">＋ Crear proyecto</a>
+    {% endif %}
+</section>
 
 <div class="row g-3 mb-4">
-    <div class="col-md-6">
-        <div class="card shadow-sm p-4 h-100">
-            <p class="text-secondary mb-1">Tu perfil</p>
-            <h2 class="h4">{{ roles[current_user.rol] }}</h2>
-            <p class="mb-0">
-                {{ current_user.email }}
-            </p>
-            <span class="badge text-bg-success mt-3 align-self-start">
-                Cuenta activa
-            </span>
+    <div class="col-sm-6 col-lg-4">
+        <div class="card stat-card p-4 h-100">
+            <p class="text-secondary mb-2">Proyectos visibles</p>
+            <div class="d-flex align-items-end justify-content-between">
+                <span class="display-6 fw-semibold">{{ total_proyectos }}</span>
+                <span class="badge rounded-pill text-bg-light">En tu espacio</span>
+            </div>
         </div>
     </div>
-
+    <div class="col-sm-6 col-lg-4">
+        <div class="card p-4 h-100">
+            <p class="text-secondary mb-2">Tareas por completar</p>
+            <div class="d-flex align-items-end justify-content-between">
+                <span class="display-6 fw-semibold">{{ tareas_pendientes }}</span>
+                <a class="small link-secondary" href="{{ url_for('proyectos') }}">Ver proyectos →</a>
+            </div>
+        </div>
+    </div>
     {% if current_user.rol == 'admin' %}
-    <div class="col-md-6">
-        <div class="card shadow-sm p-4 h-100">
-            <p class="text-secondary mb-1">Usuarios registrados</p>
-            <h2 class="display-6">{{ total_usuarios }}</h2>
-            <p class="mb-0">{{ usuarios_activos }} cuentas activas</p>
-            <a href="{{ url_for('usuarios') }}"
-               class="btn btn-primary mt-3 align-self-start">
-                Administrar usuarios
-            </a>
+    <div class="col-sm-6 col-lg-4">
+        <div class="card p-4 h-100">
+            <p class="text-secondary mb-2">Equipo activo</p>
+            <div class="d-flex align-items-end justify-content-between">
+                <span class="display-6 fw-semibold">{{ usuarios_activos }}</span>
+                <a class="small link-secondary" href="{{ url_for('usuarios') }}">Administrar →</a>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="col-sm-6 col-lg-4">
+        <div class="card p-4 h-100">
+            <p class="text-secondary mb-2">Tu perfil</p>
+            <h2 class="h5 mb-1">{{ roles[current_user.rol] }}</h2>
+            <span class="small text-secondary">{{ current_user.email }}</span>
         </div>
     </div>
     {% endif %}
 </div>
 
-<div class="card shadow-sm p-4">
-    <h2 class="h5">Hito 1: Gestión de usuarios</h2>
-
-    {% if current_user.rol == 'admin' %}
-        <p>
-            Puedes administrar las cuentas, modificar roles y activar o
-            desactivar usuarios.
-        </p>
-        <a class="btn btn-outline-primary align-self-start"
-           href="{{ url_for('usuarios') }}">Ir a usuarios</a>
-    {% elif current_user.rol == 'desarrollador' %}
-        <p>
-            Puedes consultar tu perfil. La gestión de tareas se incorporará
-            en el Hito 3.
-        </p>
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <p class="eyebrow mb-1">Seguimiento</p>
+        <h2 class="h4 mb-0">Proyectos recientes</h2>
+    </div>
+    <a class="btn btn-outline-primary btn-sm" href="{{ url_for('proyectos') }}">Ver todos</a>
+</div>
+<div class="row g-3">
+    {% for proyecto in proyectos %}
+    {% set total_tareas = proyecto.tareas|length %}
+    {% set tareas_terminadas = proyecto.tareas|selectattr('estado', 'equalto', 'completada')|list|length %}
+    {% set avance = (tareas_terminadas * 100 / total_tareas)|round|int if total_tareas else 0 %}
+    <div class="col-md-6">
+        <a href="{{ url_for('proyecto_detalle', project_id=proyecto.id) }}"
+           class="card p-4 h-100 text-decoration-none text-reset d-block">
+            <div class="d-flex justify-content-between gap-3 mb-3">
+                <div>
+                    <h3 class="h5 mb-1">{{ proyecto.nombre }}</h3>
+                    <span class="small text-secondary">{{ total_tareas }} tareas</span>
+                </div>
+                <span class="badge rounded-pill text-bg-light align-self-start">{{ estados_proyecto[proyecto.estado] if estados_proyecto is defined else proyecto.estado|replace('_', ' ')|title }}</span>
+            </div>
+            <div class="progress mb-2" role="progressbar" aria-valuenow="{{ avance }}" aria-valuemin="0" aria-valuemax="100">
+                <div class="progress-bar" style="width: {{ avance }}%"></div>
+            </div>
+            <div class="small text-secondary">{{ avance }}% completado</div>
+        </a>
+    </div>
     {% else %}
-        <p>
-            Puedes consultar tu perfil. Los informes para clientes se
-            incorporarán en los siguientes hitos.
-        </p>
-    {% endif %}
+    <div class="col-12">
+        <div class="card p-5 text-center">
+            <p class="eyebrow mb-2">Todo comienza aquí</p>
+            <h3 class="h5">Aún no tienes proyectos asignados</h3>
+            <p class="text-secondary mb-3">Cuando te asignen a un proyecto, podrás consultar aquí sus tareas y avances.</p>
+            {% if current_user.rol == 'admin' %}
+            <a class="btn btn-primary align-self-center" href="{{ url_for('proyecto_nuevo') }}">Crear primer proyecto</a>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
 </div>
 {% endblock %}

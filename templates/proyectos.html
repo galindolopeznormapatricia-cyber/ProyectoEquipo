@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Proyectos | DevProject Manager{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-end flex-wrap gap-3 mb-4">
+    <div>
+        <p class="eyebrow mb-2">Planifica y colabora</p>
+        <h1 class="h2 mb-1">Proyectos</h1>
+        <p class="text-secondary mb-0">Consulta el estado, el equipo y las tareas de cada proyecto.</p>
+    </div>
+    {% if current_user.rol == 'admin' %}
+    <a class="btn btn-primary" href="{{ url_for('proyecto_nuevo') }}">＋ Nuevo proyecto</a>
+    {% endif %}
+</div>
+
+<div class="row g-3">
+    {% for proyecto in proyectos %}
+    {% set total_tareas = proyecto.tareas|length %}
+    {% set tareas_terminadas = proyecto.tareas|selectattr('estado', 'equalto', 'completada')|list|length %}
+    {% set avance = (tareas_terminadas * 100 / total_tareas)|round|int if total_tareas else 0 %}
+    <div class="col-md-6 col-xl-4">
+        <div class="card p-4 h-100">
+            <div class="d-flex justify-content-between gap-2 mb-3">
+                <span class="eyebrow">Proyecto #{{ proyecto.id }}</span>
+                <span class="badge rounded-pill text-bg-light">{{ estados[proyecto.estado] }}</span>
+            </div>
+            <h2 class="h5">{{ proyecto.nombre }}</h2>
+            <p class="text-secondary small flex-grow-1">{{ proyecto.descripcion or 'Sin descripción.' }}</p>
+            <div class="d-flex justify-content-between small mb-2">
+                <span>Avance</span><strong>{{ avance }}%</strong>
+            </div>
+            <div class="progress mb-3" role="progressbar" aria-valuenow="{{ avance }}" aria-valuemin="0" aria-valuemax="100">
+                <div class="progress-bar" style="width: {{ avance }}%"></div>
+            </div>
+            <div class="d-flex justify-content-between small text-secondary mb-3">
+                <span>{{ total_tareas }} tareas</span>
+                <span>{{ proyecto.miembros|length }} integrantes</span>
+            </div>
+            <a class="btn btn-outline-primary" href="{{ url_for('proyecto_detalle', project_id=proyecto.id) }}">Abrir proyecto →</a>
+        </div>
+    </div>
+    {% else %}
+    <div class="col-12">
+        <div class="card p-5 text-center">
+            <h2 class="h5">No hay proyectos para mostrar</h2>
+            <p class="text-secondary mb-0">
+                {% if current_user.rol == 'admin' %}
+                Crea un proyecto y asigna integrantes para comenzar.
+                {% else %}
+                Pide al Project Manager que te asigne a un proyecto.
+                {% endif %}
+            </p>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}
+

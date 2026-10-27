@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Editar' if proyecto else 'Nuevo' }} proyecto | DevProject Manager{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-9">
+        <div class="mb-4">
+            <p class="eyebrow mb-2">Administración del proyecto</p>
+            <h1 class="h2">{{ 'Editar proyecto' if proyecto else 'Crear proyecto' }}</h1>
+            <p class="text-secondary mb-0">Define el plan, presupuesto y personas que colaborarán.</p>
+        </div>
+        <form method="POST" class="card p-4 p-md-5">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="row g-3">
+                <div class="col-md-8">
+                    <label class="form-label" for="nombre">Nombre del proyecto</label>
+                    <input class="form-control" id="nombre" name="nombre" maxlength="120" required
+                           value="{{ proyecto.nombre if proyecto else '' }}">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="estado">Estado</label>
+                    <select class="form-select" id="estado" name="estado" required>
+                        {% for clave, etiqueta in estados.items() %}
+                        <option value="{{ clave }}" {% if proyecto and proyecto.estado == clave %}selected{% elif not proyecto and clave == 'planificacion' %}selected{% endif %}>{{ etiqueta }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-12">
+                    <label class="form-label" for="descripcion">Descripción</label>
+                    <textarea class="form-control" id="descripcion" name="descripcion" rows="3" maxlength="4000">{{ proyecto.descripcion if proyecto else '' }}</textarea>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="presupuesto">Presupuesto (MXN)</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-light border-0">$</span>
+                        <input class="form-control" id="presupuesto" name="presupuesto" type="number" min="0" step="0.01" required
+                               value="{{ proyecto.presupuesto if proyecto else '0.00' }}">
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="fecha_inicio">Fecha de inicio</label>
+                    <input class="form-control" id="fecha_inicio" name="fecha_inicio" type="date"
+                           value="{{ proyecto.fecha_inicio.isoformat() if proyecto and proyecto.fecha_inicio else '' }}">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="fecha_fin">Fecha de término</label>
+                    <input class="form-control" id="fecha_fin" name="fecha_fin" type="date"
+                           value="{{ proyecto.fecha_fin.isoformat() if proyecto and proyecto.fecha_fin else '' }}">
+                </div>
+                <div class="col-12">
+                    <label class="form-label" for="miembros">Equipo del proyecto</label>
+                    <select class="form-select" id="miembros" name="miembros" multiple size="6">
+                        {% for persona in candidatos %}
+                        <option value="{{ persona.id }}" {% if persona.id in seleccionados %}selected{% endif %}>
+                            {{ persona.nombre }} · {{ 'Desarrollador' if persona.rol == 'desarrollador' else 'Cliente' }} · {{ persona.email }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    <div class="form-text">Usa Ctrl (Windows) o Cmd (Mac) para seleccionar varias personas. Solo aparecen cuentas activas.</div>
+                </div>
+            </div>
+            <div class="d-flex gap-2 mt-4">
+                <button class="btn btn-primary">Guardar proyecto</button>
+                <a class="btn btn-outline-secondary" href="{{ url_for('proyectos') }}">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
