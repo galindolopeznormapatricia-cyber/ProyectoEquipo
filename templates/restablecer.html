@@ -1,0 +1,35 @@
+
+{% extends "base.html" %}
+{% block title %}Restablecer contraseña | DevProject Manager{% endblock %}
+
+{% block content %}
+<div class="auth-container">
+    <div class="card shadow-sm p-4">
+        <h1 class="h3">Nueva contraseña</h1>
+        <p class="text-secondary">
+            Elige una contraseña segura para tu cuenta.
+        </p>
+
+        <form method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <div class="mb-3">
+                <label class="form-label">Nueva contraseña</label>
+                <input type="password" name="password" class="form-control"
+                       minlength="10" autocomplete="new-password" required>
+                <div class="form-text">
+                    Mínimo 10 caracteres, mayúscula, minúscula, número y símbolo.
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Confirmar contraseña</label>
+                <input type="password" name="confirmar" class="form-control"
+                       minlength="10" autocomplete="new-password" required>
+            </div>
+
+            <button class="btn btn-primary w-100">Cambiar contraseña</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

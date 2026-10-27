@@ -1,0 +1,47 @@
+
+{% extends "base.html" %}
+{% block title %}Registro | DevProject Manager{% endblock %}
+
+{% block content %}
+<div class="auth-container">
+    <div class="card shadow-sm p-4">
+        <h1 class="h3 text-center">Crear cuenta</h1>
+        <p class="text-secondary text-center">
+            Regístrate como desarrollador.
+        </p>
+
+        <form method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <div class="mb-3">
+                <label class="form-label">Nombre completo</label>
+                <input type="text" name="nombre" class="form-control"
+                       maxlength="100" autocomplete="name" required>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Correo electrónico</label>
+                <input type="email" name="email" class="form-control"
+                       maxlength="150" autocomplete="email" required>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Contraseña</label>
+                <input type="password" name="password" class="form-control"
+                       minlength="10" autocomplete="new-password" required>
+                <div class="form-text">
+                    Mínimo 10 caracteres, mayúscula, minúscula, número y símbolo.
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Confirmar contraseña</label>
+                <input type="password" name="confirmar" class="form-control"
+                       minlength="10" autocomplete="new-password" required>
+            </div>
+
+            <button class="btn btn-primary w-100">Crear cuenta</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

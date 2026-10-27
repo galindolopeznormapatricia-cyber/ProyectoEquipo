@@ -1,0 +1,72 @@
+
+{% extends "base.html" %}
+{% block title %}Usuarios | DevProject Manager{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
+    <div>
+        <h1 class="h2">Gestión de usuarios</h1>
+        <p class="text-secondary mb-0">Administración de cuentas y roles.</p>
+    </div>
+    <a href="{{ url_for('usuario_nuevo') }}" class="btn btn-primary">
+        + Nuevo usuario
+    </a>
+</div>
+
+<div class="card shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>ID</th>
+                    <th>Nombre</th>
+                    <th>Correo</th>
+                    <th>Rol</th>
+                    <th>Estado</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for usuario in usuarios %}
+                <tr>
+                    <td>{{ usuario.id }}</td>
+                    <td>{{ usuario.nombre }}</td>
+                    <td>{{ usuario.email }}</td>
+                    <td>{{ roles[usuario.rol] }}</td>
+                    <td>
+                        {% if usuario.activo %}
+                            <span class="badge text-bg-success">Activo</span>
+                        {% else %}
+                            <span class="badge text-bg-secondary">Inactivo</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="d-flex gap-2">
+                            <a class="btn btn-sm btn-outline-primary"
+                               href="{{ url_for('usuario_editar', user_id=usuario.id) }}">
+                                Editar
+                            </a>
+                            <form method="POST"
+                                  action="{{ url_for('usuario_estado', user_id=usuario.id) }}"
+                                  onsubmit="return confirm('¿Cambiar el estado de esta cuenta?');">
+                                <input type="hidden" name="csrf_token"
+                                       value="{{ csrf_token() }}">
+                                <button class="btn btn-sm btn-outline-secondary">
+                                    {{ 'Desactivar' if usuario.activo else 'Activar' }}
+                                </button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6" class="text-center py-4">
+                        No hay usuarios registrados.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
