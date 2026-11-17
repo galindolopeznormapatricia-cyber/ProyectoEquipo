@@ -27,9 +27,9 @@
     {% endif %}
 </div>
 
-{% set total_tareas = proyecto.tareas|length %}
-{% set tareas_terminadas = proyecto.tareas|selectattr('estado', 'equalto', 'completada')|list|length %}
-{% set avance = (tareas_terminadas * 100 / total_tareas)|round|int if total_tareas else 0 %}
+{% set total_tareas = resumen.total_tareas %}
+{% set tareas_terminadas = resumen.completadas %}
+{% set avance = resumen.avance %}
 <div class="row g-3 mb-4">
     <div class="col-sm-6 col-lg-3">
         <div class="card stat-card p-3 h-100"><span class="small text-secondary">Avance general</span><strong class="display-6">{{ avance }}%</strong></div>
@@ -45,6 +45,25 @@
     </div>
 </div>
 
+<section class="card p-4 mb-4" aria-label="Comparación de horas del proyecto">
+    <h2 class="h5">Planificación y ejecución</h2>
+    <div class="row g-3">
+        <div class="col-sm-4">
+            <span class="small text-secondary d-block">Horas planificadas</span>
+            <strong class="h4">{{ '%.2f'|format(resumen.horas_planificadas) }} h</strong>
+        </div>
+        <div class="col-sm-4">
+            <span class="small text-secondary d-block">Horas reales</span>
+            <strong class="h4">{{ '%.2f'|format(resumen.horas) }} h</strong>
+        </div>
+        <div class="col-sm-4">
+            <span class="small text-secondary d-block">Desviación (reales − planificadas)</span>
+            <strong class="h4 {{ 'text-danger' if resumen.desviacion > 0 else 'text-secondary' }}">{{ '%+.2f'|format(resumen.desviacion) }} h</strong>
+        </div>
+    </div>
+    <p class="small text-secondary mt-3 mb-0">Un valor positivo indica exceso sobre lo planificado; uno negativo indica horas aún disponibles. El avance se calcula por tareas completadas, no por horas consumidas. Los filtros de tareas no modifican estos totales.</p>
+</section>
+
 <section class="card p-4 mb-4">
     <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
         <div>
@@ -57,6 +76,7 @@
     </div>
     <div class="row g-3">
         {% for fase in proyecto.fases %}
+        {% set resumen_fase = resumen_de_tareas(fase.tareas) %}
         <div class="col-md-6 col-xl-4">
             <article class="phase-card h-100">
                 <div class="d-flex justify-content-between align-items-start gap-2">
@@ -75,6 +95,11 @@
                 <h3 class="h6 mt-3 mb-1">{{ fase.nombre }}</h3>
                 <p class="small text-secondary mb-2">{{ fase.descripcion or 'Sin descripción adicional.' }}</p>
                 <div class="small text-secondary">{{ fase.tareas|length }} tareas · {{ fase.fecha_inicio.strftime('%d/%m/%Y') if fase.fecha_inicio else 'Sin inicio' }} — {{ fase.fecha_fin.strftime('%d/%m/%Y') if fase.fecha_fin else 'Sin término' }}</div>
+                <div class="small mt-2">
+                    Avance: {{ resumen_fase.avance }}% · {{ resumen_fase.completadas }}/{{ resumen_fase.total_tareas }} completadas
+                    <br>Horas reales / planificadas: {{ '%.2f'|format(resumen_fase.horas) }} / {{ '%.2f'|format(resumen_fase.horas_planificadas) }} h
+                    <br><span class="{{ 'text-danger' if resumen_fase.desviacion > 0 else 'text-secondary' }}">Desviación: {{ '%+.2f'|format(resumen_fase.desviacion) }} h</span>
+                </div>
             </article>
         </div>
         {% else %}
@@ -142,6 +167,8 @@
         </div>
         <div class="d-grid gap-3">
             {% for tarea in proyecto.tareas %}
+            {% set horas_reales = horas_de_tarea(tarea) %}
+            {% set desviacion = horas_reales - tarea.horas_estimadas %}
             <article class="card p-4 task-card" data-task-card
                      data-status="{{ tarea.estado }}"
                      data-owner="{{ tarea.asignado_a_id if tarea.asignado_a_id else 'sin-asignar' }}"
@@ -157,7 +184,8 @@
                         <p class="small text-secondary mb-2">{{ tarea.descripcion or 'Sin descripción.' }}</p>
                         <div class="small text-secondary">
                             Asignada a {{ tarea.asignado_a.nombre if tarea.asignado_a else 'nadie' }}
-                            · {{ horas_de_tarea(tarea) }} / {{ tarea.horas_estimadas }} h reales / planificadas
+                            · {{ '%.2f'|format(horas_reales) }} / {{ '%.2f'|format(tarea.horas_estimadas) }} h reales / planificadas
+                            · <span class="{{ 'text-danger' if desviacion > 0 else 'text-secondary' }}">Desviación: {{ '%+.2f'|format(desviacion) }} h</span>
                             {% if tarea.fecha_limite %} · Entrega {{ tarea.fecha_limite.strftime('%d/%m/%Y') }}{% endif %}
                         </div>
                     </div>
@@ -172,7 +200,7 @@
                     </div>
                     {% endif %}
                 </div>
-                {% if current_user.rol == 'desarrollador' and tarea.asignado_a_id in [none, current_user.id] %}
+                {% if current_user.rol == 'desarrollador' and puede_trabajar and tarea.estado != 'completada' and tarea.asignado_a_id in [none, current_user.id] %}
                 <details class="mt-3">
                     <summary class="small fw-semibold text-secondary">＋ Reportar horas o avance</summary>
                     <form method="POST" action="{{ url_for('registrar_horas', task_id=tarea.id) }}" class="row g-2 mt-2">

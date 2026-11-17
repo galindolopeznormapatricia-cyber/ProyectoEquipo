@@ -319,7 +319,27 @@ def es_miembro_desarrollador(proyecto, usuario=None):
 
 
 def horas_de_tarea(tarea):
-    return sum((registro.horas for registro in tarea.registros_horas), start=0)
+    return sum(
+        (registro.horas for registro in tarea.registros_horas),
+        start=Decimal("0"),
+    )
+
+
+def resumen_de_tareas(tareas):
+    total = len(tareas)
+    completadas = sum(tarea.estado == "completada" for tarea in tareas)
+    planificadas = sum(
+        (tarea.horas_estimadas for tarea in tareas), start=Decimal("0"),
+    )
+    reales = sum((horas_de_tarea(tarea) for tarea in tareas), start=Decimal("0"))
+    return {
+        "total_tareas": total,
+        "completadas": completadas,
+        "avance": round(completadas * 100 / total) if total else 0,
+        "horas_planificadas": planificadas,
+        "horas": reales,
+        "desviacion": reales - planificadas,
+    }
 
 
 @app.route("/")
@@ -677,6 +697,8 @@ def proyecto_detalle(project_id):
         puede_trabajar=puede_trabajar,
         es_admin=current_user.rol == "admin",
         horas_de_tarea=horas_de_tarea,
+        resumen=resumen_de_tareas(proyecto.tareas),
+        resumen_de_tareas=resumen_de_tareas,
     )
 
 
@@ -802,12 +824,16 @@ def guardar_tarea(proyecto, tarea=None):
                 not horas_estimadas.is_finite()
                 or horas_estimadas < 0
                 or horas_estimadas > Decimal("99999.99")
+                or horas_estimadas != horas_estimadas.quantize(Decimal("0.01"))
             ):
                 raise InvalidOperation
             error = None
         except InvalidOperation:
             horas_estimadas = Decimal("0")
-            error = "Las horas estimadas deben ser un número entre 0 y 99,999.99."
+            error = (
+                "Las horas estimadas deben ser un número entre 0 y 99,999.99 "
+                "con un máximo de dos decimales."
+            )
 
         if not error and (not titulo or len(titulo) > 140):
             error = "El título es obligatorio y debe tener hasta 140 caracteres."
@@ -881,10 +907,19 @@ def registrar_horas(task_id):
 
     try:
         horas = Decimal(request.form.get("horas", ""))
-        if not horas.is_finite() or horas <= 0 or horas > 24:
+        if (
+            not horas.is_finite()
+            or horas <= 0
+            or horas > 24
+            or horas != horas.quantize(Decimal("0.01"))
+        ):
             raise InvalidOperation
     except InvalidOperation:
-        flash("Las horas deben ser un número mayor a 0 y no mayor a 24.", "danger")
+        flash(
+            "Las horas deben ser un número mayor a 0 y no mayor a 24 "
+            "con un máximo de dos decimales.",
+            "danger",
+        )
         return redirect(url_for("proyecto_detalle", project_id=proyecto.id))
 
     fecha, error = parsear_fecha(request.form.get("fecha", ""), "del reporte")
@@ -911,25 +946,10 @@ def registrar_horas(task_id):
 def informes():
     resumenes = []
     for proyecto in proyectos_visibles():
-        total_tareas = len(proyecto.tareas)
-        completadas = sum(
-            tarea.estado == "completada" for tarea in proyecto.tareas
-        )
-        horas = sum(
-            (
-                registro.horas
-                for tarea in proyecto.tareas
-                for registro in tarea.registros_horas
-            ),
-            start=Decimal("0"),
-        )
         resumenes.append(
             {
                 "proyecto": proyecto,
-                "total_tareas": total_tareas,
-                "completadas": completadas,
-                "avance": round(completadas * 100 / total_tareas) if total_tareas else 0,
-                "horas": horas,
+                **resumen_de_tareas(proyecto.tareas),
             }
         )
     return render_template("informes.html", resumenes=resumenes)
