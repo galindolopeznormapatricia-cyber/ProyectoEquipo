@@ -18,6 +18,16 @@ py -m venv .venv
 python -m pip install -r requirements.txt
 ```
 
+Antes de ejecutar la aplicación, crea un `.env` con una clave secreta de al
+menos 32 caracteres. Puedes generar una con:
+
+```powershell
+python -c "import secrets; print('SECRET_KEY=' + secrets.token_hex(32))"
+```
+
+Copia la línea generada en `.env`. No compartas ni subas ese archivo al
+repositorio; está excluido de Git.
+
 La aplicación crea las tablas que falten al iniciar. También puedes
 inicializarlas manualmente:
 
